@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: budgets
+    // Document ID: auto-generated
+    // Fields:
+    //   - secretaryName: string (required)
+    //   - allocatedAmount: number (required)
+    //   - spentAmount: number (required)
+    //   - description: string (optional)
+    //   - lastUpdated: string (optional)
+    //
+    // Collection: users
+    // Document ID: userId (auth.uid)
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'viewer')
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isValidBudget(data) {
+      return data.keys().hasAll(['secretaryName', 'allocatedAmount', 'spentAmount']) &&
+             data.secretaryName is string &&
+             data.allocatedAmount is number &&
+             data.spentAmount is number &&
+             data.allocatedAmount >= 0 &&
+             data.spentAmount >= 0;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /budgets/{budgetId} {
+      allow read, write: if true;
+    }
+  }
+}

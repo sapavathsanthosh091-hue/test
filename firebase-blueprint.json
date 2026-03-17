@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "Budget": {
+      "title": "Budget",
+      "description": "Represents the budget allocation and spending for a specific secretary portfolio.",
+      "type": "object",
+      "properties": {
+        "secretaryName": {
+          "type": "string",
+          "description": "The name of the secretary portfolio (e.g., Sports Secretary)."
+        },
+        "allocatedAmount": {
+          "type": "number",
+          "description": "The total amount allocated to this portfolio."
+        },
+        "spentAmount": {
+          "type": "number",
+          "description": "The amount spent so far."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the budget usage."
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp of the last update."
+        }
+      },
+      "required": ["secretaryName", "allocatedAmount", "spentAmount"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Represents a user in the system with role-based access.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "viewer"],
+          "description": "The role of the user."
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/budgets/{budgetId}": {
+      "schema": "Budget",
+      "description": "Collection of secretary budgets."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles and roles."
+    }
+  }
+}
