@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -41,12 +41,18 @@ import {
   X,
   Save,
   ChevronRight,
-  Info
+  Info,
+  LogOut,
+  Shield
 } from 'lucide-react';
 import { db } from './firebase';
 import { Budget, SpendingRecord, OperationType, FirestoreErrorInfo } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import PinLogin from './PinLogin';
+
+const AddEditModal = lazy(() => import('./AddEditModal'));
+const SpendingModal = lazy(() => import('./SpendingModal'));
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -71,6 +77,9 @@ export default function App() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalSuccess, setModalSuccess] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPinLogin, setShowPinLogin] = useState(false);
+  const [countdown, setCountdown] = useState(5);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -97,6 +106,49 @@ export default function App() {
     };
     console.error('Firestore Error: ', JSON.stringify(errInfo));
     setError(`Database error. ${error instanceof Error ? error.message : ''}`);
+  };
+
+  // Check admin status on mount
+  useEffect(() => {
+    const adminStatus = localStorage.getItem('adminLoggedIn');
+    if (adminStatus === 'true') {
+      setIsAdmin(true);
+    }
+  }, []);
+
+  // Auto-open PIN login after 5 seconds if not admin
+  useEffect(() => {
+    if (!isAdmin && !loading) {
+      setCountdown(5);
+      const timer = setTimeout(() => {
+        setShowPinLogin(true);
+      }, 5000); // 5 seconds
+
+      const countdownInterval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        clearTimeout(timer);
+        clearInterval(countdownInterval);
+      };
+    }
+  }, [isAdmin, loading]);
+
+  const handleAdminLogin = () => {
+    setIsAdmin(true);
+    localStorage.setItem('adminLoggedIn', 'true');
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    localStorage.removeItem('adminLoggedIn');
   };
 
   useEffect(() => {
@@ -323,6 +375,39 @@ export default function App() {
               </div>
             </div>
           </div>
+          <div className="flex items-center gap-4">
+            {isAdmin ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                  <Shield className="w-4 h-4" />
+                  Admin
+                </div>
+                <button
+                  onClick={handleAdminLogout}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                {countdown > 0 && countdown <= 5 && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
+                    <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                    Admin access in {countdown}s
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowPinLogin(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  Admin Access
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -471,17 +556,19 @@ export default function App() {
               <h2 className="text-2xl font-bold tracking-tight">Portfolios</h2>
               <p className="text-sm text-gray-500">Detailed breakdown of secretary spending</p>
             </div>
-            <button
-              onClick={() => {
-                setFormData({ secretaryName: SECRETARIES[0], allocatedAmount: 0, spendingRecords: [], description: '' });
-                setIsEditing(null);
-                setShowAddModal(true);
-              }}
-              className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
-            >
-              <Plus className="w-5 h-5" />
-              Add Portfolio
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setFormData({ secretaryName: SECRETARIES[0], allocatedAmount: 0, spendingRecords: [], description: '' });
+                  setIsEditing(null);
+                  setShowAddModal(true);
+                }}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
+              >
+                <Plus className="w-5 h-5" />
+                Add Portfolio
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -539,29 +626,31 @@ export default function App() {
                         </div>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setFormData({
-                                secretaryName: budget.secretaryName,
-                                allocatedAmount: budget.allocatedAmount,
-                                spendingRecords: budget.spendingRecords,
-                                description: budget.description || ''
-                              });
-                              setIsEditing(budget.id);
-                              setShowAddModal(true);
-                            }}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteBudget(budget.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setFormData({
+                                  secretaryName: budget.secretaryName,
+                                  allocatedAmount: budget.allocatedAmount,
+                                  spendingRecords: budget.spendingRecords,
+                                  description: budget.description || ''
+                                });
+                                setIsEditing(budget.id);
+                                setShowAddModal(true);
+                              }}
+                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBudget(budget.id)}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -580,229 +669,43 @@ export default function App() {
       </main>
 
       {/* Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
-          <div className="relative bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-8 border-b border-black/5 flex items-center justify-between">
-              <h3 className="text-2xl font-bold tracking-tight">
-                {isEditing ? 'Edit Portfolio' : 'Add New Portfolio'}
-              </h3>
-              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {modalSuccess && (
-              <div className="p-4 bg-green-50 border-b border-green-100">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                  <p className="text-sm font-medium text-green-700">{modalSuccess}</p>
-                </div>
-              </div>
-            )}
-            
-            <form onSubmit={handleSaveBudget} className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Secretary Portfolio</label>
-                <select
-                  value={formData.secretaryName}
-                  onChange={(e) => setFormData({ ...formData, secretaryName: e.target.value })}
-                  className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
-                  required
-                >
-                  {SECRETARIES.map(name => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Allocated (₹)</label>
-                <input
-                  type="number"
-                  value={formData.allocatedAmount}
-                  onChange={(e) => setFormData({ ...formData, allocatedAmount: Number(e.target.value) })}
-                  className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
-                  required
-                  min="0"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-emerald-500 transition-all font-medium h-24 resize-none"
-                  placeholder="What is this budget used for?"
-                />
-              </div>
-
-              {/* Spending Records Section */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Spending Records</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSpendingFormData({ amount: 0, reason: '' });
-                      setEditingSpendingId(null);
-                      setShowSpendingModal(true);
-                    }}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all text-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Spending
-                  </button>
-                </div>
-
-                {formData.spendingRecords.length > 0 ? (
-                  <div className="bg-gray-50 rounded-2xl p-4 max-h-60 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                          <th className="text-left py-2">Amount</th>
-                          <th className="text-left py-2">Reason</th>
-                          <th className="text-left py-2">Date</th>
-                          <th className="text-right py-2">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {formData.spendingRecords.map((record) => (
-                          <tr key={record.id} className="text-gray-700">
-                            <td className="py-2 font-medium">₹{record.amount.toLocaleString()}</td>
-                            <td className="py-2">{record.reason}</td>
-                            <td className="py-2 text-xs text-gray-500">
-                              {new Date(record.date).toLocaleDateString()}
-                            </td>
-                            <td className="py-2 text-right">
-                              <div className="flex justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditSpendingRecord(record)}
-                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                >
-                                  <Edit2 className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSpendingRecord(record.id)}
-                                  className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 rounded-2xl p-8 text-center text-gray-500">
-                    <p className="text-sm">No spending records yet</p>
-                    <p className="text-xs mt-1">Add spending records to track expenses</p>
-                  </div>
-                )}
-
-                <div className="text-sm text-gray-600">
-                  <p>Total Spent: <span className="font-bold text-emerald-600">
-                    ₹{formData.spendingRecords.reduce((sum, r) => sum + r.amount, 0).toLocaleString()}
-                  </span></p>
-                </div>
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-6 py-4 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-4 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
-                >
-                  <Save className="w-5 h-5" />
-                  {isEditing ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div></div>}>
+        <AddEditModal
+          showAddModal={showAddModal}
+          setShowAddModal={setShowAddModal}
+          isEditing={isEditing}
+          formData={formData}
+          setFormData={setFormData}
+          SECRETARIES={SECRETARIES}
+          setSpendingFormData={setSpendingFormData}
+          setEditingSpendingId={setEditingSpendingId}
+          setShowSpendingModal={setShowSpendingModal}
+          handleEditSpendingRecord={handleEditSpendingRecord}
+          handleDeleteSpendingRecord={handleDeleteSpendingRecord}
+          handleSaveBudget={handleSaveBudget}
+          modalSuccess={modalSuccess}
+        />
+      </Suspense>
 
       {/* Spending Record Modal */}
-      {showSpendingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowSpendingModal(false)} />
-          <div className="relative bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-black/5 flex items-center justify-between">
-              <h3 className="text-xl font-bold tracking-tight">
-                {editingSpendingId ? 'Edit Spending Record' : 'Add Spending Record'}
-              </h3>
-              <button onClick={() => setShowSpendingModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div></div>}>
+        <SpendingModal
+          showSpendingModal={showSpendingModal}
+          setShowSpendingModal={setShowSpendingModal}
+          editingSpendingId={editingSpendingId}
+          spendingFormData={spendingFormData}
+          setSpendingFormData={setSpendingFormData}
+          handleSaveSpendingRecord={handleSaveSpendingRecord}
+          spendingModalSuccess={spendingModalSuccess}
+        />
+      </Suspense>
 
-            {spendingModalSuccess && (
-              <div className="p-4 bg-green-50 border-b border-green-100">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                  <p className="text-sm font-medium text-green-700">{spendingModalSuccess}</p>
-                </div>
-              </div>
-            )}
-            
-            <div className="p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Amount (₹)</label>
-                <input
-                  type="number"
-                  value={spendingFormData.amount}
-                  onChange={(e) => setSpendingFormData({ ...spendingFormData, amount: Number(e.target.value) })}
-                  className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
-                  required
-                  min="0"
-                  step="0.01"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Reason for Spending</label>
-                <textarea
-                  value={spendingFormData.reason}
-                  onChange={(e) => setSpendingFormData({ ...spendingFormData, reason: e.target.value })}
-                  className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 transition-all font-medium h-20 resize-none"
-                  placeholder="Describe what this spending was for..."
-                  required
-                />
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSpendingModal(false)}
-                  className="flex-1 px-4 py-3 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveSpendingRecord}
-                  className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white px-4 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
-                >
-                  <Save className="w-4 h-4" />
-                  {editingSpendingId ? 'Update' : 'Add'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* PIN Login Modal */}
+      <PinLogin
+        isOpen={showPinLogin}
+        onClose={() => setShowPinLogin(false)}
+        onLogin={handleAdminLogin}
+      />
     </div>
   );
 }
